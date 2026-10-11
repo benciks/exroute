@@ -24,6 +24,7 @@ class Coordinates(BaseModel):
   lon: float
   lat: float
 
+# TODO: handle zero results
 def geocode(place: str) -> Coordinates:
   url = settings.GEOCODE_URL + '/forward?q={place}&access_token={token}'.format(
     place=place, 

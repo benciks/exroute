@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 
 class RouteCreate(BaseModel):
@@ -38,10 +38,6 @@ class StopPositionEnum(str, Enum):
   Middle = 'middle'
   Late = 'late'
 
-class StopInfluenceEnum(str, Enum):
-  OnRoute = 'on_route'
-  RouteShaping = 'route_shaping'
-
 class CurvatureEnum(str, Enum):
   Low = 'low'
   Medium = 'medium'
@@ -49,22 +45,19 @@ class CurvatureEnum(str, Enum):
 
 class StopSchema(BaseModel):
   request: str
-  count: int
   resolution: StopResolutionEnum
-  priority: StopPriorityEnum
-  leg: StopLegEnum
-  position: StopPositionEnum
-  influence: StopInfluenceEnum
-  order: int
-  max_detour_km: int
+  priority: StopPriorityEnum = StopPriorityEnum.Preferred
+  leg: StopLegEnum = StopLegEnum.WholeRoute
+  count: int | None = Field(default=None, ge=1, le=5)
+  position: StopPositionEnum = StopPositionEnum.Any
+  max_detour_km: float | None = Field(gt=0)
 
 class RouteIntent(BaseModel):
   start: str
-  end: str
-  return_to_start: bool
-  target: IntentTarget
-  stops: list[StopSchema]
-  curvature: CurvatureEnum
-  avoid_motorways: bool
-  avoid_tolls: bool
-  notes: str
+  end: str | None = None
+  target: IntentTarget | None = None
+  stops: list[StopSchema] = []
+  curvature: CurvatureEnum | None = None
+  avoid_motorways: bool = False
+  avoid_tolls: bool = False
+  notes: str = ""
