@@ -13,7 +13,7 @@ from app.api.v1.users.service import UserService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 @router.post(
   "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.api.v1.users.routes import router as auth_router
+from app.api.v1.routes.routes import router as routes_router
 from app.utils.migrations import run_migrations
 
 setup_logging()
@@ -17,6 +18,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(routes_router)
 
 @app.get("/health")
 async def health_check():
