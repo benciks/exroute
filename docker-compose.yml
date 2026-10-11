@@ -1,0 +1,11 @@
+services:
+  database:
+    image: "postgres:latest"
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: simon
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: exroute
+    volumes:
+      - ./db-data/:/var/lib/postgresql
