@@ -58,7 +58,7 @@ def route(
     "costing_options": {
       "motorcycle": costing_options(opts)
     },
-    "direction_options": {
+    "directions_options": {
       "units": "kilometers"
     },
     "format": "json"

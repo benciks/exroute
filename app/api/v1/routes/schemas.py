@@ -31,7 +31,6 @@ class StopLegEnum(str, Enum):
   Outbound = 'outbound'
   Return = 'return'
   WholeRoute = 'whole_route'
-  Late = 'late'
 
 class StopPositionEnum(str, Enum):
   Any = 'any'
@@ -50,6 +49,7 @@ class CurvatureEnum(str, Enum):
 
 class StopSchema(BaseModel):
   request: str
+  count: int
   resolution: StopResolutionEnum
   priority: StopPriorityEnum
   leg: StopLegEnum

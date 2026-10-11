@@ -15,15 +15,26 @@ class RouteService:
     if intent is None:
       return None
 
+    # TODO: handle via exception when moved to dif function
+    if not intent.end:
+      return None
+
     # test geocoding
     start = geocode(intent.start)
     end = geocode(intent.end)
 
-    points = [
-      start,
-      # TODO: add geocoded exact stops here
-      end
-    ]
+    points = [start]
+
+    for stop in intent.stops:
+      if stop.resolution != "exact_place":
+        continue
+      if stop.leg not in ("outbound", "whole_route"):
+        continue
+
+      waypoint = geocode(stop.request)
+      points.append(waypoint)
+
+    points.append(end)
 
     route_result = route(points, RouteOptions(
       curvature=intent.curvature,
