@@ -42,8 +42,5 @@ class UserRepository:
   async def get_by_email(self, email: str) -> User | None:
     query = select(User).where(User.email == email)
     result = await self.session.execute(query)
-    user = result.scalar_one_or_none()
-
-    if not user:
-      raise NotFoundException("User not found")
-    return user
+    # No raise, registration relies on None to know the email is still free
+    return result.scalar_one_or_none()

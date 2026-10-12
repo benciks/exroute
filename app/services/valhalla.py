@@ -38,9 +38,6 @@ curvature_to_scalar = {
   "high": 0.8
 }
 
-REUSED_EDGE_RADIUS_METERS = 50
-REUSED_EDGE_FACTOR = 8
-
 def costing_options(opts: RouteOptions) -> dict[str, float]:
   costing_options = {}
   if opts.curvature:
@@ -60,7 +57,6 @@ async def route(
     opts: RouteOptions,
     break_indexes: frozenset[int] = frozenset()
 ) -> RouteResult:
-  url = settings.VALHALLA_URL + "/route"
   typed_locations = []
 
   # First, last and explicit ones are breaks, the others are "through" - pass without
@@ -85,18 +81,7 @@ async def route(
     },
     "format": "json"
   }
-  async with httpx2.AsyncClient(timeout=30.0) as client:
-    response = await client.post(url, json=params)
-  response.raise_for_status()
-  result = TripResult.model_validate(response.json())
-
-  return RouteResult(
-      distance_km = result.trip.summary.length,
-      duration_min =  result.trip.summary.time / 60,
-      leg_shapes = [
-        leg.shape for leg in result.trip.legs
-      ],
-  )
+  return await post_trip("/route", params, timeout=30.0)
 
 async def round_trip(
     locations: Sequence[Coordinates],
@@ -107,15 +92,10 @@ async def round_trip(
   if not locations: raise NoRouteFoundException("a round trip needs an origin")
 
   if seed is None:
-    seed = random.randrange(0x100000000) 
-  target_km = target.value if target.unit == TargetValueEnum.Km else target.value * 0.92
+    seed = random.randrange(0x100000000)
 
-  candidates = 3
-  if target_km < 100: candidates = 5
-  if target_km >= 500: candidates = 2
-
-  max_overlap = 0.005 if target_km < 100 else 0.02 
-
+  # Valhalla sizes the search (candidates, overlap limits, reuse penalty) from the
+  # target itself, the seed only rotates where it places the loop's anchors
   params = {
     "locations": [{"lat": p.lat, "lon": p.lon} for p in locations],
     "costing": "motorcycle",
@@ -127,10 +107,6 @@ async def round_trip(
     },
     "format": "json",
     "round_trip_options": {
-      "overlap_radius": REUSED_EDGE_RADIUS_METERS,
-      "max_overlap": max_overlap,
-      "reuse_factor": REUSED_EDGE_FACTOR,
-      "candidates": candidates,
       "seed": seed,
       "prefer_under": target.mode == TargetModeEnum.Under,
       "prefer_at_least": target.mode == TargetModeEnum.At_least
@@ -142,9 +118,17 @@ async def round_trip(
   else:
     params["target_time"] = target.value
 
-  url = settings.VALHALLA_URL + "/round_trip"
-  async with httpx2.AsyncClient(timeout=120.0) as client:
-    response = await client.post(url, json=params)
+  return await post_trip("/round_trip", params, timeout=120.0)
+
+async def post_trip(path: str, params: dict, timeout: float) -> RouteResult:
+  async with httpx2.AsyncClient(timeout=timeout) as client:
+    response = await client.post(settings.VALHALLA_URL + path, json=params)
+
+  # A 4xx means Valhalla couldn't route this input, e.g. error 171 "No suitable
+  # edges near location" for a point outside the tiles. Its reason is in the body.
+  if response.is_client_error:
+    error = response.json().get("error", response.text)
+    raise NoRouteFoundException(f"Valhalla {path}: {error}")
   response.raise_for_status()
   result = TripResult.model_validate(response.json())
 

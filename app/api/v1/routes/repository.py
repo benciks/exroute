@@ -29,6 +29,11 @@ class RouteRepository:
     logger.info(f"Created route: {route.id}")
     return route
 
+  async def list_for_user(self, user_id: uuid.UUID) -> list[Route]:
+    query = select(Route).where(Route.user_id == user_id).order_by(Route.created_at.desc())
+    result = await self.session.execute(query)
+    return list(result.scalars().all())
+
   # Scoped to the owner, other users' routes look like they don't exist
   async def get_by_id(self, route_id: uuid.UUID, user_id: uuid.UUID) -> Route:
     query = select(Route).where(Route.id == route_id, Route.user_id == user_id)

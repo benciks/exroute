@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.routes.models import Route
 from app.api.v1.routes.repository import RouteRepository
 from app.api.v1.routes.schemas import RouteCreate
 from app.services.llm import parse_intent
@@ -24,16 +25,15 @@ class RouteService:
     else:
       result = await plan_a_to_b(instructions, intent)
 
-    # Loop planners are not implemented yet
-    if result is None:
-      return { "intent": intent }
-
     route = await self.repository.create(user_id, instructions, result)
     return {
       "id": route.id,
       "intent": intent,
       **result.model_dump()
     }
+
+  async def list_routes(self, user_id: uuid.UUID) -> list[Route]:
+    return await self.repository.list_for_user(user_id)
 
   async def get_gpx(self, route_id: uuid.UUID, user_id: uuid.UUID) -> str:
     route = await self.repository.get_by_id(route_id, user_id)

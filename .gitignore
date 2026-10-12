@@ -13,3 +13,5 @@ wheels/
 db-data/
 
 .env
+
+.claude/

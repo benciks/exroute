@@ -4,7 +4,7 @@ from openai import AsyncOpenAI
 from openai.types.shared import ReasoningEffort
 from pydantic import BaseModel
 
-from app.api.v1.routes.schemas import RouteIntent, StopSchema
+from app.api.v1.routes.schemas import RouteIntent, StopLegEnum, StopSchema
 from app.core.config import settings
 
 # Fail fast instead of the client defaults (600s timeout, 2 retries)
@@ -16,7 +16,7 @@ client = AsyncOpenAI(
 
 # Caps runaway generation, structured output can otherwise loop until the model limit
 MAX_OUTPUT_TOKENS = 2048
-REASONING_EFFORT: ReasoningEffort = "medium"
+REASONING_EFFORT: ReasoningEffort = "low"
 
 # Chat completions instead of the responses API, the LiteLLM proxy turns responses
 # requests into an empty `tools` array which vLLM rejects for some models (e.g. GLM)
@@ -27,12 +27,13 @@ Extract a generic, structured route intent from the user's request. Do not plan 
 Route topology:
 - start: the starting location.
 - end: a named destination different from start. Keep it when the user also says "and back". Omit it entirely for loops (round trips from start with no destination).
+- return_to_start: true when the trip returns to start. "Brno to Prague and back" means end="Prague" and true. A "50 km loop from Brno" has no end and true. "Brno to Prague" is false.
 
 Target is {value, unit, mode}. Unit is "km" or "min". Mode is "around", "under", "at_least", or "open". Only include target when the user states a distance or duration; omit it otherwise.
 
 Stops:
 - stops includes exact places and generic discovery requests.
-- request preserves the natural-language request.
+- request preserves the natural-language request for discovery stops. For exact places it is only the place name as it would be searched on a map, without words like "via" or "through": "via Mikulov" -> "Mikulov".
 - count is the number of distinct places the rider wants for one discovery request, from 1 to 5. Interpret "a couple", "a pair", and "two" as 2; "a few" or "three" as 3; and other explicit quantities literally. Omit count when only one place is requested.
 - resolution is "exact_place" for a named place ("via Mikulov") and "discover" for a category ("a nice cafe", "a castle").
 - priority is "required" for must/visit/include/via and "preferred" for some/a nice/if possible/recommend.
@@ -62,7 +63,18 @@ async def parse_intent(instructions: str) -> RouteIntent | None:
       reasoning_effort = REASONING_EFFORT
     )
 
-    return response.choices[0].message.parsed
+    intent = response.choices[0].message.parsed
+    if intent is None:
+      return None
+
+    # Catch the model contradicting itself, both would otherwise pick the wrong planner
+    if intent.end and intent.end.strip().lower() == intent.start.strip().lower():
+      intent.end = None
+      intent.return_to_start = True
+    if any(stop.leg == StopLegEnum.Return for stop in intent.stops):
+      intent.return_to_start = True
+
+    return intent
 
 
 class RouteSample(BaseModel):

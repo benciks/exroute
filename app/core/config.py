@@ -11,7 +11,8 @@ class Settings(BaseSettings):
   JWT_ALGORITHM: str = "HS256"
   JWT_EXPIRATION: int = 30 # minutes
 
-  LLM_API_ENDPOINT: str
+  # Add back only when using the local models
+  # LLM_API_ENDPOINT: str
   LLM_API_KEY: str
   LLM_MODEL: str = "gpt-6-astra"
 
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
   MAPBOX_API_KEY: str
 
   VALHALLA_URL: str
+
+  # Browser apps allowed to call the API, the Vite dev server by default
+  CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
   model_config = SettingsConfigDict(
     env_file=".env",

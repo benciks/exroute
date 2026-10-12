@@ -1,8 +1,20 @@
-from pydantic import BaseModel, Field
+import uuid
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 class RouteCreate(BaseModel):
   instructions: str;
+
+class RouteResponse(BaseModel):
+  model_config = ConfigDict(from_attributes=True)
+  id: uuid.UUID
+  instructions: str
+  distance_km: float
+  duration_min: float
+  polyline: str
+  waypoints: list[dict]
+  created_at: datetime
 
 class TargetValueEnum(str, Enum):
   Km = 'km'

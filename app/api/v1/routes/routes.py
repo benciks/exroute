@@ -7,7 +7,7 @@ from app.core.logging import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
-from app.api.v1.routes.schemas import RouteCreate
+from app.api.v1.routes.schemas import RouteCreate, RouteResponse
 from app.api.v1.routes.service import RouteService
 
 logger = get_logger(__name__)
@@ -29,6 +29,13 @@ async def create_route(
   except Exception as e:
     logger.error(f"Failed to create route: {str(e)}")
     raise
+
+@router.get("", response_model=list[RouteResponse])
+async def list_routes(
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session)
+):
+  return await RouteService(session).list_routes(current_user.id)
 
 @router.get("/{route_id}/gpx")
 async def export_gpx(
