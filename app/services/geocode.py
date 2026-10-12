@@ -2,6 +2,7 @@ from pydantic import BaseModel
 import httpx2
 
 from app.core.config import settings
+from app.core.exceptions import EmptyGeocodeResultException, EmptyReverseGeocodeResultException
 
 class GeocodeGeometry(BaseModel):
   type: str
@@ -24,16 +25,17 @@ class Coordinates(BaseModel):
   lon: float
   lat: float
 
-# TODO: handle zero results
 def geocode(place: str) -> Coordinates:
-  url = settings.GEOCODE_URL + '/forward?q={place}&access_token={token}'.format(
-    place=place, 
-    token=settings.GEOCODE_API_KEY
-  )
-  response = httpx2.get(url)
+  url = settings.GEOCODE_URL + '/forward'
+  response = httpx2.get(url, params={
+    "q": place,
+    "access_token": settings.GEOCODE_API_KEY
+  })
   response.raise_for_status()
 
   result = GeocodeResult.model_validate(response.json())
+  if not result.features:
+    raise EmptyGeocodeResultException(place)
   best_pick = result.features[0]
 
   return Coordinates(
@@ -41,16 +43,18 @@ def geocode(place: str) -> Coordinates:
     lat = best_pick.geometry.coordinates[1]
   )
 
-def reverseGeocode(point: Coordinates) -> str:
-  url = settings.GEOCODE_URL + '/reverse?longitude={logitude}&latitude={latitude}&access_token={token}'.format(
-    logitude=point.lon, 
-    latitude=point.lat,
-    token=settings.GEOCODE_API_KEY
-  )
-  response = httpx2.get(url)
+def reverse_geocode(point: Coordinates) -> str:
+  url = settings.GEOCODE_URL + '/reverse'
+  response = httpx2.get(url, params={
+    "longitude": point.lon,
+    "latitude": point.lat,
+    "access_token": settings.GEOCODE_API_KEY,
+  })
   response.raise_for_status()
 
   result = GeocodeResult.model_validate(response.json())
+  if not result.features:
+    raise EmptyReverseGeocodeResultException(point.lat, point.lon)
   best_pick = result.features[0]
 
   return best_pick.properties.full_address
