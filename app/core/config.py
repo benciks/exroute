@@ -12,9 +12,9 @@ class Settings(BaseSettings):
   JWT_EXPIRATION: int = 30 # minutes
 
   # Add back only when using the local models
-  # LLM_API_ENDPOINT: str
+  LLM_API_ENDPOINT: str
   LLM_API_KEY: str
-  LLM_MODEL: str = "gpt-6-astra"
+  LLM_MODEL: str = "qwen3.8-flash-next"
 
   GEOCODE_URL: str
   GEOCODE_API_KEY: str

@@ -1,4 +1,5 @@
 import json
+import warnings
 
 from openai import AsyncOpenAI, ContentFilterFinishReasonError, LengthFinishReasonError
 from openai.types.shared import ReasoningEffort
@@ -10,14 +11,23 @@ from app.core.exceptions import UnclearRequestException
 
 # Fail fast instead of the client defaults (600s timeout, 2 retries)
 client = AsyncOpenAI(
+  base_url=settings.LLM_API_ENDPOINT,
   api_key=settings.LLM_API_KEY,
   timeout=90.0,
   max_retries=1
 )
 
+# The local server adds its own top-level `metadata` ({"weight_versions": [...]}) where the SDK
+# expects OpenAI's dict of strings, and `parse()` re-serializes the response, warning on every call
+warnings.filterwarnings(
+  "ignore",
+  message=r"(?s)Pydantic serializer warnings:.*field_name='metadata'",
+  category=UserWarning,
+)
+
 # Caps runaway generation, structured output can otherwise loop until the model limit
 MAX_OUTPUT_TOKENS = 2048
-REASONING_EFFORT: ReasoningEffort = "low"
+REASONING_EFFORT: ReasoningEffort = "none"
 
 # Chat completions instead of the responses API, the LiteLLM proxy turns responses
 # requests into an empty `tools` array which vLLM rejects for some models (e.g. GLM)
