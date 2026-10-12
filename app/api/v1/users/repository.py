@@ -1,12 +1,11 @@
 import uuid
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import AlreadyExistsException, NotFoundException
+from app.core.exceptions import AlreadyExistsException
 from app.core.logging import get_logger
-from app.core.security import get_password_hash
 from app.api.v1.users.models import User
-from app.api.v1.users.schemas import UserCreate
 
 logger = get_logger(__name__)
 
@@ -14,33 +13,26 @@ class UserRepository:
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
 
-  async def create(self, user_data: UserCreate) -> User:
-    existing_user = await self.get_by_email(user_data.email)
-    if existing_user:
-      raise AlreadyExistsException("Email already registered")
-
-    user = User(
-      email = user_data.email, hashed_password=get_password_hash(user_data.password)
-    )
+  async def create(self, email: str, hashed_password: str) -> User:
+    user = User(email=email, hashed_password=hashed_password)
     self.session.add(user)
-    await self.session.commit()
+    try:
+      await self.session.commit()
+    except IntegrityError:
+      # Two registrations of one email raced past the existence check in the service
+      await self.session.rollback()
+      raise AlreadyExistsException("Email already registered") from None
     await self.session.refresh(user)
 
-    logger.info(f"Created user: {user.email}")
+    logger.info(f"Created user: {user.id}")
     return user
 
   async def get_by_id(self, user_id: uuid.UUID) -> User | None:
     query = select(User).where(User.id == user_id)
     result = await self.session.execute(query)
-    user = result.scalar_one_or_none()
-
-    if not user:
-      raise NotFoundException("User not found")
-
-    return user
+    return result.scalar_one_or_none()
 
   async def get_by_email(self, email: str) -> User | None:
     query = select(User).where(User.email == email)
     result = await self.session.execute(query)
-    # No raise, registration relies on None to know the email is still free
     return result.scalar_one_or_none()

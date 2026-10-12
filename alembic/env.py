@@ -1,9 +1,7 @@
 import asyncio
-import importlib
 import sys
 import os
 from logging.config import fileConfig
-from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -15,17 +13,9 @@ from alembic import context
 from app.core.config import settings
 from app.core.db import Base
 
-# Automatically import all models
-src_path = Path(__file__).parent.parent / "app" / "api" / "v1"
-for path in src_path.rglob("*.py"):
-    if path.name != "__init__.py":
-        module_path = str(path.relative_to(Path(__file__).parent.parent)).replace(
-            os.sep, "."
-        )[:-3]
-        try:
-            importlib.import_module(module_path)
-        except Exception as e:
-            print(f"Failed to import {module_path}: {e}")
+# Registers the tables on Base.metadata for autogenerate, a new model module goes here too
+import app.api.v1.users.models  # noqa: F401
+import app.api.v1.routes.models  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config

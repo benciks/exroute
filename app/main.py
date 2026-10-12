@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+import httpx2
+import openai
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
@@ -27,6 +30,17 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(routes_router)
+
+# The LLM, geocoders or Valhalla failing is not our bug, tell the client to retry
+# instead of answering with a bare 500
+@app.exception_handler(httpx2.HTTPError)
+@app.exception_handler(openai.APIError)
+async def upstream_error_handler(request: Request, exc: Exception) -> JSONResponse:
+  logger.error(f"Upstream service failed on {request.url.path}: {exc!r}")
+  return JSONResponse(
+    status_code=status.HTTP_502_BAD_GATEWAY,
+    content={"detail": "A routing service is unavailable right now, please try again"},
+  )
 
 @app.get("/health")
 async def health_check():

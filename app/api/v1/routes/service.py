@@ -17,9 +17,6 @@ class RouteService:
   async def create_route(self, user_id: uuid.UUID, route_data: RouteCreate):
     instructions = route_data.instructions
     intent = await parse_intent(instructions)
-    if intent is None:
-      return None
-
     if intent.return_to_start:
       result = await plan_destination_return(instructions, intent) if intent.end else await plan_generated_loop(instructions, intent)
     else:

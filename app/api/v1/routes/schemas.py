@@ -4,7 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 class RouteCreate(BaseModel):
-  instructions: str;
+  # Bounded since the whole prompt goes to the LLM, a real request is a sentence or two
+  instructions: str = Field(min_length=1, max_length=1000)
 
 class RouteResponse(BaseModel):
   model_config = ConfigDict(from_attributes=True)
@@ -62,7 +63,7 @@ class StopSchema(BaseModel):
   priority: StopPriorityEnum = StopPriorityEnum.Preferred
   leg: StopLegEnum = StopLegEnum.WholeRoute
   position: StopPositionEnum = StopPositionEnum.Any
-  max_detour_km: float | None = Field(gt=0)
+  max_detour_km: float | None = Field(default=None, gt=0)
 
 class RouteIntent(BaseModel):
   start: str

@@ -1,11 +1,12 @@
 import json
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, ContentFilterFinishReasonError, LengthFinishReasonError
 from openai.types.shared import ReasoningEffort
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.api.v1.routes.schemas import RouteIntent, StopLegEnum, StopSchema
 from app.core.config import settings
+from app.core.exceptions import UnclearRequestException
 
 # Fail fast instead of the client defaults (600s timeout, 2 retries)
 client = AsyncOpenAI(
@@ -51,7 +52,8 @@ Examples:
 
 Curvature is "high" for explicitly curvy/twisty roads and "medium" for explicitly scenic/winding roads. Omit curvature when the rider did not request road curvature; use "low" only when they explicitly request low curvature. It is a Valhalla cost preference; never create synthetic curvature stops. Reflect explicit motorway and toll preferences. Keep notes concise.'''
 
-async def parse_intent(instructions: str) -> RouteIntent | None:
+async def parse_intent(instructions: str) -> RouteIntent:
+  try:
     response = await client.chat.completions.parse(
       model=settings.LLM_MODEL,
       messages=[
@@ -62,19 +64,30 @@ async def parse_intent(instructions: str) -> RouteIntent | None:
       max_completion_tokens = MAX_OUTPUT_TOKENS,
       reasoning_effort = REASONING_EFFORT
     )
+  # Output that breaks the schema or never finishes, providers behind a proxy
+  # don't always enforce the schema constraints
+  except (ValidationError, LengthFinishReasonError, ContentFilterFinishReasonError):
+    raise UnclearRequestException() from None
 
-    intent = response.choices[0].message.parsed
-    if intent is None:
-      return None
+  intent = response.choices[0].message.parsed
+  if intent is None:
+    raise UnclearRequestException()
 
-    # Catch the model contradicting itself, both would otherwise pick the wrong planner
-    if intent.end and intent.end.strip().lower() == intent.start.strip().lower():
-      intent.end = None
-      intent.return_to_start = True
-    if any(stop.leg == StopLegEnum.Return for stop in intent.stops):
-      intent.return_to_start = True
+  intent.start = intent.start.strip()
+  if not intent.start:
+    raise UnclearRequestException("Where should the route start? Add a starting place to the request")
+  # Strict structured output makes every field required, so "no value" may come back as ""
+  intent.end = (intent.end or "").strip() or None
+  intent.stops = [stop for stop in intent.stops if stop.request.strip()]
 
-    return intent
+  # Catch the model contradicting itself, both would otherwise pick the wrong planner
+  if intent.end and intent.end.lower() == intent.start.lower():
+    intent.end = None
+    intent.return_to_start = True
+  if any(stop.leg == StopLegEnum.Return for stop in intent.stops):
+    intent.return_to_start = True
+
+  return intent
 
 
 class RouteSample(BaseModel):
@@ -104,39 +117,39 @@ Suggest real, specifically named places for each requested stop along the suppli
 - Only suggest places you are confident exist. Return an empty list if none are credible.'''
 
 async def suggest_pois(
-    instructions: str,
-    stops: list[StopSchema],
-    samples: list[RouteSample],
-    max_distance_km: float
+  instructions: str,
+  stops: list[StopSchema],
+  samples: list[RouteSample],
+  max_distance_km: float
 ) -> list[PoiSuggestion]:
-    payload = {
-      "original_request": instructions,
-      "max_distance_km": max_distance_km,
-      "stops": [
-        {
-          "index": index,
-          "request": stop.request,
-          "count": stop.count or 1,
-          "position": stop.position,
-          "priority": stop.priority,
-        }
-        for index, stop in enumerate(stops)
-      ],
-      "samples": [sample.model_dump() for sample in samples],
-    }
+  payload = {
+    "original_request": instructions,
+    "max_distance_km": max_distance_km,
+    "stops": [
+      {
+        "index": index,
+        "request": stop.request,
+        "count": stop.count or 1,
+        "position": stop.position,
+        "priority": stop.priority,
+      }
+      for index, stop in enumerate(stops)
+    ],
+    "samples": [sample.model_dump() for sample in samples],
+  }
 
-    response = await client.chat.completions.parse(
-      model=settings.LLM_MODEL,
-      messages=[
-        {"role": "system", "content": poi_system_prompt},
-        {"role": "user", "content": json.dumps(payload)},
-      ],
-      response_format = PoiSuggestions,
-      max_completion_tokens = MAX_OUTPUT_TOKENS,
-      reasoning_effort = REASONING_EFFORT
-    )
+  response = await client.chat.completions.parse(
+    model=settings.LLM_MODEL,
+    messages=[
+      {"role": "system", "content": poi_system_prompt},
+      {"role": "user", "content": json.dumps(payload)},
+    ],
+    response_format = PoiSuggestions,
+    max_completion_tokens = MAX_OUTPUT_TOKENS,
+    reasoning_effort = REASONING_EFFORT
+  )
 
-    parsed = response.choices[0].message.parsed
-    if parsed is None:
-      return []
-    return parsed.suggestions
+  parsed = response.choices[0].message.parsed
+  if parsed is None:
+    return []
+  return parsed.suggestions

@@ -28,6 +28,9 @@ class Coordinates(BaseModel):
 class Place(Coordinates):
   name: str
 
+# One client for the whole app so connections to the geocoders are reused between calls
+client = httpx2.AsyncClient()
+
 async def geocode(
     place: str,
     lon: float | None = None,
@@ -40,20 +43,19 @@ async def geocode(
     "text": place,
     "api_key": settings.GEOCODE_API_KEY
   }
-  if lon and lat:
+  if lon is not None and lat is not None:
     params["focus.point.lon"] = str(lon)
     params["focus.point.lat"] = str(lat)
   # e.g. "venue" restricts results to POIs
   if layers:
     params["layers"] = layers
   # Unlike the focus point, which only ranks results, this excludes anything outside the circle
-  if radius_km and lon and lat:
+  if radius_km and lon is not None and lat is not None:
     params["boundary.circle.lon"] = str(lon)
     params["boundary.circle.lat"] = str(lat)
     params["boundary.circle.radius"] = str(radius_km)
 
-  async with httpx2.AsyncClient() as client:
-    response = await client.get(url, params=params)
+  response = await client.get(url, params=params)
   response.raise_for_status()
 
   result = GeocodeResult.model_validate(response.json())
@@ -71,14 +73,13 @@ async def geocode(
 # addresses like "U Dálnice 620", while Mapbox returns the nearest town or village
 async def reverse_geocode(point: Coordinates) -> str:
   url = settings.MAPBOX_URL + '/reverse'
-  async with httpx2.AsyncClient() as client:
-    response = await client.get(url, params={
-      "longitude": point.lon,
-      "latitude": point.lat,
-      "types": "place,locality",
-      "limit": 1,
-      "access_token": settings.MAPBOX_API_KEY,
-    })
+  response = await client.get(url, params={
+    "longitude": point.lon,
+    "latitude": point.lat,
+    "types": "place,locality",
+    "limit": 1,
+    "access_token": settings.MAPBOX_API_KEY,
+  })
   response.raise_for_status()
 
   result = GeocodeResult.model_validate(response.json())
@@ -89,6 +90,3 @@ async def reverse_geocode(point: Coordinates) -> str:
   if best_pick.properties.place_formatted:
     return f"{best_pick.properties.name}, {best_pick.properties.place_formatted}"
   return best_pick.properties.name
-
-
-

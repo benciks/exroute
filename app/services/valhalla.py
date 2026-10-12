@@ -32,6 +32,9 @@ class RouteResult(BaseModel):
   duration_min: float
   leg_shapes: list[str]
 
+# Valhalla is local and timeouts are set per request, one client reuses its connections
+client = httpx2.AsyncClient()
+
 curvature_to_scalar = {
   "low": 0.0,
   "medium": 0.4,
@@ -43,9 +46,9 @@ def costing_options(opts: RouteOptions) -> dict[str, float]:
   if opts.curvature:
     costing_options["use_curvature"] = curvature_to_scalar[opts.curvature] 
 
+  # Motorcycle costing has no use_trunk, use_highways penalizes trunk roads at half weight
   if opts.avoid_motorways:
     costing_options["use_highways"] = 0.0
-    costing_options["use_trunk"] = 0.0
 
   if opts.avoid_tolls:
     costing_options["use_tolls"] = 0.0 
@@ -121,8 +124,7 @@ async def round_trip(
   return await post_trip("/round_trip", params, timeout=120.0)
 
 async def post_trip(path: str, params: dict, timeout: float) -> RouteResult:
-  async with httpx2.AsyncClient(timeout=timeout) as client:
-    response = await client.post(settings.VALHALLA_URL + path, json=params)
+  response = await client.post(settings.VALHALLA_URL + path, json=params, timeout=timeout)
 
   # A 4xx means Valhalla couldn't route this input, e.g. error 171 "No suitable
   # edges near location" for a point outside the tiles. Its reason is in the body.

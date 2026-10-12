@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-  """"Application settings."""
+  """Application settings."""
 
   PROJECT_NAME: str = "exroute"
   DATABASE_URL: str

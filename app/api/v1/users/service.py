@@ -1,12 +1,11 @@
-from datetime import timedelta
+import asyncio
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.exceptions import UnauthorizedException
+from app.core.exceptions import AlreadyExistsException, UnauthorizedException
 from app.core.logging import get_logger
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, get_password_hash, verify_password
 from app.api.v1.users.models import User
 from app.api.v1.users.repository import UserRepository
 from app.api.v1.users.schemas import LoginData, Token, UserCreate
@@ -19,24 +18,23 @@ class UserService:
     self.repository = UserRepository(session)
 
   async def create_user(self, user_data: UserCreate) -> User:
-    return await self.repository.create(user_data)
+    if await self.repository.get_by_email(user_data.email):
+      raise AlreadyExistsException("Email already registered")
+
+    # Argon2 is deliberately slow CPU work, a thread keeps it off the event loop
+    hashed_password = await asyncio.to_thread(get_password_hash, user_data.password)
+    return await self.repository.create(user_data.email, hashed_password)
 
   async def authenticate(self, login_data: LoginData) -> Token:
     user = await self.repository.get_by_email(login_data.email)
 
-    if not user or not verify_password(
-      login_data.password, user.hashed_password
+    if not user or not await asyncio.to_thread(
+      verify_password, login_data.password, user.hashed_password
     ):
       raise UnauthorizedException(detail="Incorrect email or password")
 
-    access_token = create_access_token(
-      data={"sub": str(user.id)},
-      expires_delta=timedelta(minutes=settings.JWT_EXPIRATION),
-    )
+    logger.info(f"User authenticated: {user.id}")
+    return Token(access_token=create_access_token(str(user.id)))
 
-    logger.info(f"User authenticated: {user.email}")
-    return Token(access_token=access_token)
-
-  async def get_user(self, user_id: UUID) -> User:
+  async def get_user(self, user_id: UUID) -> User | None:
     return await self.repository.get_by_id(user_id)
-  
