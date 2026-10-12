@@ -13,10 +13,12 @@ class Settings(BaseSettings):
 
   LLM_API_ENDPOINT: str
   LLM_API_KEY: str
-  LLM_MODEL: str = "command-a"
+  LLM_MODEL: str = "gpt-6-astra"
 
   GEOCODE_URL: str
   GEOCODE_API_KEY: str
+  MAPBOX_URL: str
+  MAPBOX_API_KEY: str
 
   VALHALLA_URL: str
 

@@ -20,7 +20,7 @@ class ProjectPoi(PoiCandidate, Projection):
 
 def project_pois_to_route(
   route: list[tuple[float, float]],
-  candidates: list[ProjectPoi]
+  candidates: list[PoiCandidate]
 ) -> list[ProjectPoi]:
   if len(route) < 2: return []
   cumulative = cumulative_distances(route)

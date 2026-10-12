@@ -1,65 +1,40 @@
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.routes.schemas import RouteCreate, RouteIntent
+from app.api.v1.routes.repository import RouteRepository
+from app.api.v1.routes.schemas import RouteCreate
 from app.services.llm import parse_intent
-from app.services.geocode import geocode
-from app.services.valhalla import RouteOptions, route
+from app.services.plan import plan_a_to_b, plan_destination_return, plan_generated_loop
+from app.utils.gpx import to_gpx
 
 class RouteService:
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
+    self.repository = RouteRepository(session)
 
-  async def create_route(self, route_data: RouteCreate):
-    intent = parse_intent(route_data.instructions)
+  async def create_route(self, user_id: uuid.UUID, route_data: RouteCreate):
+    instructions = route_data.instructions
+    intent = await parse_intent(instructions)
     if intent is None:
       return None
 
     if intent.return_to_start:
-      return await plan_destination_return(intent) if intent.end else await plan_generated_loop(intent)
+      result = await plan_destination_return(instructions, intent) if intent.end else await plan_generated_loop(instructions, intent)
+    else:
+      result = await plan_a_to_b(instructions, intent)
 
-    return await plan_a_to_b(intent)
+    # Loop planners are not implemented yet
+    if result is None:
+      return { "intent": intent }
 
-async def plan_a_to_b(intent: RouteIntent):
-    if intent.end is None: return
-    start = geocode(intent.start)
-    end = geocode(intent.end, start.lon, start.lat)
-
-    points = [start]
-
-    for stop in intent.stops:
-      if stop.resolution != "exact_place":
-        continue
-      if stop.leg not in ("outbound", "whole_route"):
-        continue
-
-      waypoint = geocode(stop.request, start.lon, start.lat)
-      points.append(waypoint)
-
-    points.append(end)
-
-    route_result = route(points, RouteOptions(
-      curvature=intent.curvature,
-      avoid_motorways=intent.avoid_motorways,
-      avoid_tolls=intent.avoid_tolls,
-    ))
-
+    route = await self.repository.create(user_id, instructions, result)
     return {
+      "id": route.id,
       "intent": intent,
-      "routing_result": route_result
+      **result.model_dump()
     }
-    # geocode star
-    # geocode end
-    # geocode waypoints
-    # batch??
-    # parse options
-    # valhalla route - points and options
-    # discover stops -> llm -> geocode - or mapbox right away?
-    # insert waypoints on path
-    # refine route - valhalla call
-    # return
 
-async def plan_destination_return(intent: RouteIntent):
-  return
-
-async def plan_generated_loop(intent: RouteIntent):
-  return
+  async def get_gpx(self, route_id: uuid.UUID, user_id: uuid.UUID) -> str:
+    route = await self.repository.get_by_id(route_id, user_id)
+    return to_gpx(route.instructions, route.polyline, route.waypoints)

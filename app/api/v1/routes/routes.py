@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends 
+import uuid
+
+from fastapi import APIRouter, Depends, Response
 from app.api.v1.users.models import User
 from app.core.db import get_session
 from app.core.logging import get_logger
@@ -15,15 +17,28 @@ router = APIRouter(prefix="/v1/routes", tags=["routes"])
 @router.post("")
 async def create_route(
   route_data: RouteCreate,
-  # current_user: User = Depends(get_current_user),
+  current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session)
 ):
   logger.debug("Creating new route")
   try:
-    result = await RouteService(session).create_route(route_data)
+    result = await RouteService(session).create_route(current_user.id, route_data)
     return {
       "result": result
     }
   except Exception as e:
     logger.error(f"Failed to create route: {str(e)}")
     raise
+
+@router.get("/{route_id}/gpx")
+async def export_gpx(
+  route_id: uuid.UUID,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session)
+):
+  gpx = await RouteService(session).get_gpx(route_id, current_user.id)
+  return Response(
+    content=gpx,
+    media_type="application/gpx+xml",
+    headers={"Content-Disposition": f'attachment; filename="route-{route_id}.gpx"'}
+  )

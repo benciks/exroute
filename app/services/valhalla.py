@@ -4,6 +4,7 @@ from app.services.geocode import Coordinates
 from pydantic import BaseModel
 import httpx2
 import random
+from collections.abc import Sequence
 
 from app.core.config import settings
 
@@ -54,20 +55,21 @@ def costing_options(opts: RouteOptions) -> dict[str, float]:
 
   return costing_options
 
-def route(
-    locations: list[Coordinates],
+async def route(
+    locations: Sequence[Coordinates],
     opts: RouteOptions,
     break_indexes: frozenset[int] = frozenset()
 ) -> RouteResult:
   url = settings.VALHALLA_URL + "/route"
   typed_locations = []
 
-  # Asign types to coords - first and last and explicit ones should break, others via
+  # First, last and explicit ones are breaks, the others are "through" - pass without
+  # a u-turn, "via" allows one and makes out-and-back spurs to every stop
   for idx, location in enumerate(locations):
     stop = idx == 0 or idx == len(locations) - 1 or idx in break_indexes
 
     typed_locations.append({
-        "type": "break" if stop else "via",
+        "type": "break" if stop else "through",
         "lon": location.lon,
         "lat": location.lat
     })
@@ -83,7 +85,8 @@ def route(
     },
     "format": "json"
   }
-  response = httpx2.post(url, json=params, timeout=30.0)
+  async with httpx2.AsyncClient(timeout=30.0) as client:
+    response = await client.post(url, json=params)
   response.raise_for_status()
   result = TripResult.model_validate(response.json())
 
@@ -95,8 +98,8 @@ def route(
       ],
   )
 
-def round_trip(
-    locations: list[Coordinates],
+async def round_trip(
+    locations: Sequence[Coordinates],
     target: IntentTarget,
     opts: RouteOptions,
     seed: int | None = None
@@ -140,7 +143,8 @@ def round_trip(
     params["target_time"] = target.value
 
   url = settings.VALHALLA_URL + "/round_trip"
-  response = httpx2.post(url, json=params, timeout=120.0)
+  async with httpx2.AsyncClient(timeout=120.0) as client:
+    response = await client.post(url, json=params)
   response.raise_for_status()
   result = TripResult.model_validate(response.json())
 

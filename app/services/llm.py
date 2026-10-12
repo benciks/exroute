@@ -1,11 +1,25 @@
-from openai import OpenAI
-from app.api.v1.routes.schemas import RouteIntent
+import json
+
+from openai import AsyncOpenAI
+from openai.types.shared import ReasoningEffort
+from pydantic import BaseModel
+
+from app.api.v1.routes.schemas import RouteIntent, StopSchema
 from app.core.config import settings
 
-client = OpenAI(
+# Fail fast instead of the client defaults (600s timeout, 2 retries)
+client = AsyncOpenAI(
   api_key=settings.LLM_API_KEY,
-  base_url=settings.LLM_API_ENDPOINT
+  timeout=90.0,
+  max_retries=1
 )
+
+# Caps runaway generation, structured output can otherwise loop until the model limit
+MAX_OUTPUT_TOKENS = 2048
+REASONING_EFFORT: ReasoningEffort = "medium"
+
+# Chat completions instead of the responses API, the LiteLLM proxy turns responses
+# requests into an empty `tools` array which vLLM rejects for some models (e.g. GLM)
 
 intent_system_prompt = '''You are a motorcycle route planning assistant.
 Extract a generic, structured route intent from the user's request. Do not plan road geometry or invent named places.
@@ -36,12 +50,81 @@ Examples:
 
 Curvature is "high" for explicitly curvy/twisty roads and "medium" for explicitly scenic/winding roads. Omit curvature when the rider did not request road curvature; use "low" only when they explicitly request low curvature. It is a Valhalla cost preference; never create synthetic curvature stops. Reflect explicit motorway and toll preferences. Keep notes concise.'''
 
-def parse_intent(instructions: str) -> RouteIntent | None:
-    response = client.responses.parse(
+async def parse_intent(instructions: str) -> RouteIntent | None:
+    response = await client.chat.completions.parse(
       model=settings.LLM_MODEL,
-      instructions=intent_system_prompt,
-      input=instructions,
-      text_format = RouteIntent
+      messages=[
+        {"role": "system", "content": intent_system_prompt},
+        {"role": "user", "content": instructions},
+      ],
+      response_format = RouteIntent,
+      max_completion_tokens = MAX_OUTPUT_TOKENS,
+      reasoning_effort = REASONING_EFFORT
     )
 
-    return response.output_parsed
+    return response.choices[0].message.parsed
+
+
+class RouteSample(BaseModel):
+  index: int
+  progress_ratio: float
+  lat: float
+  lon: float
+  location: str
+
+class PoiSuggestion(BaseModel):
+  stop_index: int
+  name: str
+  search_query: str
+  sample_index: int
+
+class PoiSuggestions(BaseModel):
+  suggestions: list[PoiSuggestion]
+
+poi_system_prompt = '''You are a motorcycle route planning assistant.
+Suggest real, specifically named places for each requested stop along the supplied route.
+- stops are indexed; set stop_index to the stop the suggestion belongs to.
+- For each stop suggest at least count + 3 places, ordered best to worst, near different samples. Extra places are fallbacks in case some cannot be found. When count > 1 the rider will visit all of them, so prefer geographically distinct places.
+- For small everyday places (cafe, restaurant, fuel) you usually don't know real names. Never invent a name; instead set search_query to the generic category word in the local language plus the town, e.g. "kavárna, Jihlava", and the search engine will find a real one there.
+- samples are ordered reverse-geocoded points along the route. Respect each stop's position (early, middle, late, any) relative to progress_ratio.
+- Every place must lie within max_distance_km of the route, so it must be close to one of the samples. Prefer a lesser-known place right next to the route over a famous one further away.
+- Never invent coordinates: set sample_index to the sample the place is nearest to and give a precise search_query: the place's own name plus the village or town it is in.
+- Only suggest places you are confident exist. Return an empty list if none are credible.'''
+
+async def suggest_pois(
+    instructions: str,
+    stops: list[StopSchema],
+    samples: list[RouteSample],
+    max_distance_km: float
+) -> list[PoiSuggestion]:
+    payload = {
+      "original_request": instructions,
+      "max_distance_km": max_distance_km,
+      "stops": [
+        {
+          "index": index,
+          "request": stop.request,
+          "count": stop.count or 1,
+          "position": stop.position,
+          "priority": stop.priority,
+        }
+        for index, stop in enumerate(stops)
+      ],
+      "samples": [sample.model_dump() for sample in samples],
+    }
+
+    response = await client.chat.completions.parse(
+      model=settings.LLM_MODEL,
+      messages=[
+        {"role": "system", "content": poi_system_prompt},
+        {"role": "user", "content": json.dumps(payload)},
+      ],
+      response_format = PoiSuggestions,
+      max_completion_tokens = MAX_OUTPUT_TOKENS,
+      reasoning_effort = REASONING_EFFORT
+    )
+
+    parsed = response.choices[0].message.parsed
+    if parsed is None:
+      return []
+    return parsed.suggestions
