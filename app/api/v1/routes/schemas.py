@@ -45,16 +45,17 @@ class CurvatureEnum(str, Enum):
 
 class StopSchema(BaseModel):
   request: str
+  count: int | None = Field(default=None, ge=1, le=5)
   resolution: StopResolutionEnum
   priority: StopPriorityEnum = StopPriorityEnum.Preferred
   leg: StopLegEnum = StopLegEnum.WholeRoute
-  count: int | None = Field(default=None, ge=1, le=5)
   position: StopPositionEnum = StopPositionEnum.Any
   max_detour_km: float | None = Field(gt=0)
 
 class RouteIntent(BaseModel):
   start: str
   end: str | None = None
+  return_to_start: bool
   target: IntentTarget | None = None
   stops: list[StopSchema] = []
   curvature: CurvatureEnum | None = None

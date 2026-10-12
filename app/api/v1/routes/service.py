@@ -11,17 +11,18 @@ class RouteService:
 
   async def create_route(self, route_data: RouteCreate):
     intent = parse_intent(route_data.instructions)
-
     if intent is None:
       return None
 
-    # TODO: handle via exception when moved to dif function
-    if not intent.end:
-      return None
+    if intent.return_to_start:
+      return await plan_destination_return(intent) if intent.end else await plan_generated_loop(intent)
 
-    # test geocoding
+    return await plan_a_to_b(intent)
+
+async def plan_a_to_b(intent: RouteIntent):
+    if intent.end is None: return
     start = geocode(intent.start)
-    end = geocode(intent.end)
+    end = geocode(intent.end, start.lon, start.lat)
 
     points = [start]
 
@@ -31,7 +32,7 @@ class RouteService:
       if stop.leg not in ("outbound", "whole_route"):
         continue
 
-      waypoint = geocode(stop.request)
+      waypoint = geocode(stop.request, start.lon, start.lat)
       points.append(waypoint)
 
     points.append(end)
@@ -46,8 +47,6 @@ class RouteService:
       "intent": intent,
       "routing_result": route_result
     }
-
-  # async def plan_a_to_b(intent: RouteIntent):
     # geocode star
     # geocode end
     # geocode waypoints
@@ -58,3 +57,9 @@ class RouteService:
     # insert waypoints on path
     # refine route - valhalla call
     # return
+
+async def plan_destination_return(intent: RouteIntent):
+  return
+
+async def plan_generated_loop(intent: RouteIntent):
+  return

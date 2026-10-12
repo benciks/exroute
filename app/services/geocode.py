@@ -9,28 +9,35 @@ class GeocodeGeometry(BaseModel):
   coordinates: list[float]
 
 class GeocodeProperty(BaseModel):
-  full_address: str
+  name: str
 
 class GeocodeFeature(BaseModel):
-  id: str
   type: str
   geometry: GeocodeGeometry
   properties: GeocodeProperty
 
 class GeocodeResult(BaseModel):
-  type: str
   features: list[GeocodeFeature]
 
 class Coordinates(BaseModel):
   lon: float
   lat: float
 
-def geocode(place: str) -> Coordinates:
-  url = settings.GEOCODE_URL + '/forward'
-  response = httpx2.get(url, params={
-    "q": place,
-    "access_token": settings.GEOCODE_API_KEY
-  })
+def geocode(
+    place: str,
+    lon: float | None = None,
+    lat: float | None = None
+  ) -> Coordinates:
+  url = settings.GEOCODE_URL + '/pelias/v1/search'
+  params = {
+    "text": place,
+    "api_key": settings.GEOCODE_API_KEY
+  }
+  if lon and lat:
+    params["focus.point.lon"] = str(lon)
+    params["focus.point.lat"] = str(lat)
+
+  response = httpx2.get(url, params=params)
   response.raise_for_status()
 
   result = GeocodeResult.model_validate(response.json())
@@ -44,11 +51,11 @@ def geocode(place: str) -> Coordinates:
   )
 
 def reverse_geocode(point: Coordinates) -> str:
-  url = settings.GEOCODE_URL + '/reverse'
+  url = settings.GEOCODE_URL + '/pelias/v1/reverse'
   response = httpx2.get(url, params={
-    "longitude": point.lon,
-    "latitude": point.lat,
-    "access_token": settings.GEOCODE_API_KEY,
+    "point.lon": point.lon,
+    "point.lat": point.lat,
+    "api_key": settings.GEOCODE_API_KEY,
   })
   response.raise_for_status()
 
@@ -57,7 +64,7 @@ def reverse_geocode(point: Coordinates) -> str:
     raise EmptyReverseGeocodeResultException(point.lat, point.lon)
   best_pick = result.features[0]
 
-  return best_pick.properties.full_address
+  return best_pick.properties.name
 
 
 
