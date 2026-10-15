@@ -1,5 +1,7 @@
 FROM python:3.14
 
+LABEL org.opencontainers.image.source="https://github.com/benciks/exroute"
+
 WORKDIR /code
 
 COPY ./requirements.txt /code/requirements.txt
