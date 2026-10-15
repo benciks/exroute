@@ -6,6 +6,7 @@ class Settings(BaseSettings):
   PROJECT_NAME: str = "exroute"
   DATABASE_URL: str
   DEBUG: bool = False
+  REGISTRATION_ENABLED: bool = False
 
   JWT_SECRET: str
   JWT_ALGORITHM: str = "HS256"

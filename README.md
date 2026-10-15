@@ -40,11 +40,34 @@ Migrations run on startup. API docs are at http://localhost:8000/docs.
 
 For the bundled database, set `DATABASE_URL=postgresql+asyncpg://simon:password@localhost:5432/exroute`.
 
+### User management
+
+Public registration is disabled by default. Set `REGISTRATION_ENABLED=true` only for
+local development or a controlled environment. In a deployment, create users from
+the application container instead; this hashes the password with Argon2 and does not
+expose a user-creation HTTP endpoint:
+
+```sh
+python -m app.cli create-user --email rider@example.com
+```
+
+The command prompts for the password twice. With Kubernetes, run it in a pod that
+has the normal application environment and database network access:
+
+```sh
+kubectl exec -it deploy/exroute -- \
+  python -m app.cli create-user --email rider@example.com
+```
+
+`--password-stdin` is also available for a non-interactive Kubernetes Job. Avoid
+putting passwords in command-line arguments because they can be visible in process
+lists and shell history.
+
 ## API
 
 | Method | Path                  | Description                                     |
 | ------ | --------------------- | ----------------------------------------------- |
-| POST   | `/v1/auth/register`   | Create an account                               |
+| POST   | `/v1/auth/register`   | Create an account (disabled by default; enable with `REGISTRATION_ENABLED=true`) |
 | POST   | `/v1/auth/login`      | Get a token (form fields `username` = email, `password`) |
 | GET    | `/v1/auth/me`         | Current user                                    |
 | POST   | `/v1/routes`          | Plan a route from `{"instructions": "..."}`     |

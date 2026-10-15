@@ -1,10 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.api.v1.users.dependencies import get_current_user
 from app.api.v1.users.models import User
@@ -16,11 +17,19 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 @router.post(
-  "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+  "/register",
+  response_model=UserResponse,
+  status_code=status.HTTP_201_CREATED,
+  include_in_schema=settings.REGISTRATION_ENABLED,
 )
 async def register(
   user_data: UserCreate, session: AsyncSession = Depends(get_session)
 ) -> User:
+  if not settings.REGISTRATION_ENABLED:
+    # Keep this endpoint unavailable in locked-down deployments.  The CLI is
+    # the supported way to create users when public registration is disabled.
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
   logger.debug(f"Registering user: {user_data.email}")
   return await UserService(session).create_user(user_data)
 
