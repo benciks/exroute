@@ -14,7 +14,7 @@ from app.api.v1.users.service import UserService
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 @router.post(
   "/register",
