@@ -1,4 +1,4 @@
-from app.api.v1.routes.schemas import CurvatureEnum, IntentTarget, TargetModeEnum, TargetValueEnum
+from app.api.v1.routes.schemas import CurvatureEnum, IntentTarget, TargetValueEnum
 from app.core.exceptions import NoRouteFoundException
 from app.services.geocode import Coordinates
 from pydantic import BaseModel
