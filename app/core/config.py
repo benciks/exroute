@@ -19,8 +19,8 @@ class Settings(BaseSettings):
 
   GEOCODE_URL: str
   GEOCODE_API_KEY: str
-  MAPBOX_URL: str
-  MAPBOX_API_KEY: str
+  GEOAPIFY_URL: str
+  GEOAPIFY_API_KEY: str
 
   VALHALLA_URL: str
 

@@ -7,9 +7,9 @@ from app.services.geocode import Coordinates
 from app.utils.geometry import haversine_km
 
 class PoiCandidate(Coordinates):
+  id: str
   name: str
-  description: str | None = None
-  category: str | None = None
+  categories: list[str] = []
 
 class Projection(BaseModel):
   progress_km: float
@@ -66,16 +66,25 @@ def filter_pois_by_position(
     and minimum <= candidate.progress_ratio <= maximum
   ]
 
-def sample_route(
+# Splits the route into equal segments of about segment_km, longer when that would
+# exceed maximum. Each segment is resampled every step_km to keep the request small
+def route_segments(
   route: list[tuple[float, float]],
-  maximum: int
-) -> list[tuple[float, float]]:
+  segment_km: float,
+  maximum: int,
+  step_km: float = 1
+) -> list[list[tuple[float, float]]]:
   cumulative = cumulative_distances(route)
   total_km = cumulative[-1] if cumulative else 0
   if total_km <= 0: return []
-  count = min(maximum, max(2, math.ceil(total_km / 8) + 1))
+  count = min(maximum, max(1, math.ceil(total_km / segment_km)))
+  length_km = total_km / count
+  steps = max(1, math.ceil(length_km / step_km))
   return [
-    point_at_distance(route, cumulative, total_km * index / (count - 1))
+    [
+      point_at_distance(route, cumulative, length_km * (index + step / steps))
+      for step in range(steps + 1)
+    ]
     for index in range(count)
   ]
 

@@ -49,10 +49,41 @@ class CurvatureEnum(str, Enum):
   Medium = 'medium'
   High = 'high'
 
+# Geoapify place categories a discovery stop can search, kept to what riders stop for.
+# Geoapify rejects the whole request on an unknown category, so the LLM can't make one up
+class PoiCategoryEnum(str, Enum):
+  Cafe = 'catering.cafe'
+  Restaurant = 'catering.restaurant'
+  FastFood = 'catering.fast_food'
+  IceCream = 'catering.ice_cream'
+  Pub = 'catering.pub'
+  Bakery = 'commercial.food_and_drink.bakery'
+  Fuel = 'service.vehicle.fuel'
+  ChargingStation = 'service.vehicle.charging_station'
+  Castle = 'tourism.sights.castle'
+  Ruins = 'tourism.sights.ruines'
+  Monastery = 'tourism.sights.monastery'
+  Church = 'tourism.sights.place_of_worship'
+  Tower = 'tourism.sights.tower'
+  Memorial = 'tourism.sights.memorial'
+  Bridge = 'tourism.sights.bridge'
+  Viewpoint = 'tourism.attraction.viewpoint'
+  Attraction = 'tourism.attraction'
+  Museum = 'entertainment.museum'
+  Peak = 'natural.mountain.peak'
+  Water = 'natural.water'
+  Beach = 'beach'
+  Park = 'leisure.park'
+  NationalPark = 'national_park'
+  Hotel = 'accommodation.hotel'
+  GuestHouse = 'accommodation.guest_house'
+  CampSite = 'camping.camp_site'
+
 class StopSchema(BaseModel):
   request: str
   count: int | None = Field(default=None, ge=1, le=5)
   resolution: StopResolutionEnum
+  categories: list[PoiCategoryEnum] = []
   priority: StopPriorityEnum = StopPriorityEnum.Preferred
   leg: StopLegEnum = StopLegEnum.WholeRoute
   position: StopPositionEnum = StopPositionEnum.Any

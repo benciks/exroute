@@ -7,21 +7,22 @@ from pydantic import BaseModel
 from app.api.v1.routes.schemas import IntentTarget, RouteIntent, StopPositionEnum, StopSchema, TargetValueEnum
 from app.core.exceptions import NoRouteFoundException
 from app.core.logging import get_logger
-from app.services.geocode import Coordinates, Place, geocode, reverse_geocode
-from app.services.llm import RouteSample, suggest_pois
+from app.services.geocode import Coordinates, Place, geocode
+from app.services.llm import pick_pois
+from app.services.places import search_along_route
 from app.services.valhalla import RouteOptions, round_trip, route
 from app.utils.geometry import haversine_km
-from app.utils.poi import PoiCandidate, filter_pois_by_position, project_pois_to_route, route_progress_km, sample_route
+from app.utils.poi import ProjectPoi, filter_pois_by_position, project_pois_to_route, route_progress_km, route_segments
 from app.utils.polyline import encode_shape, join_legs
 
 logger = get_logger(__name__)
 
 # How far off the route a discovered stop may be
 POI_CORRIDOR_KM = 10
-# Search radius around the route sample the LLM placed the POI near
-POI_SEARCH_RADIUS_KM = 15
-# sample_route spaces points ~8 km apart up to this cap, more samples = more local suggestions
-MAX_ROUTE_SAMPLES = 12
+# Each segment is one Geoapify request per stop returning at most 20 places
+POI_SEGMENT_KM = 25
+# Caps requests per stop on long routes, the segments get longer instead
+MAX_POI_SEGMENTS = 8
 # Discovered stops closer than this read as one place on the map
 MIN_POI_SPACING_KM = 1
 # Loop size when the rider gave no distance or duration
@@ -203,74 +204,45 @@ async def discover_pois(
   if not stops:
     return []
 
-  # Drop the endpoints, they are the start and end themselves
-  sampled = sample_route(shape, MAX_ROUTE_SAMPLES)[1:-1]
-  if not sampled:
+  segments = route_segments(shape, POI_SEGMENT_KM, MAX_POI_SEGMENTS)
+  if not segments:
     return []
 
-  locations = await asyncio.gather(
-    *(reverse_geocode(Coordinates(lat=lat, lon=lon)) for lat, lon in sampled),
-    return_exceptions=True
-  )
-  samples = [
-    RouteSample(
-      index=index,
-      progress_ratio=round((index + 1) / (len(sampled) + 1), 2),
-      lat=lat,
-      lon=lon,
-      location=location if isinstance(location, str) else "unknown",
-    )
-    for index, ((lat, lon), location) in enumerate(zip(sampled, locations))
-  ]
-
-  try:
-    suggested = await suggest_pois(instructions, stops, samples, POI_CORRIDOR_KM)
-  except Exception as e:
-    if any(stop.priority == "required" for stop in stops): raise
-    logger.warning(f"POI suggestion failed, continuing without discovered stops: {e}")
-    return []
-
-  suggestions = [
-    suggestion for suggestion in suggested
-    if 0 <= suggestion.stop_index < len(stops) and 0 <= suggestion.sample_index < len(samples)
-  ]
-
-  places = await asyncio.gather(
-    *(
-      geocode(
-        suggestion.search_query,
-        samples[suggestion.sample_index].lon,
-        samples[suggestion.sample_index].lat,
-        layers="venue",
-        radius_km=POI_SEARCH_RADIUS_KM
-      )
-      for suggestion in suggestions
-    ),
+  found = await asyncio.gather(
+    *(search_along_route(stop.categories, segments, POI_CORRIDOR_KM) for stop in stops),
     return_exceptions=True
   )
 
-  candidates: dict[int, list[PoiCandidate]] = {index: [] for index in range(len(stops))}
-  for suggestion, place in zip(suggestions, places):
-    if isinstance(place, BaseException):
-      logger.warning(f"Suggested POI could not be geocoded: {suggestion.name} ({place})")
-      continue
-    candidates[suggestion.stop_index].append(PoiCandidate(
-      lat=place.lat,
-      lon=place.lon,
-      name=place.name,
-      description=stops[suggestion.stop_index].request,
-    ))
+  eligible: list[list[ProjectPoi]] = []
+  for stop, candidates in zip(stops, found):
+    if isinstance(candidates, BaseException):
+      if stop.priority == "required": raise candidates
+      logger.warning(f"POI search failed for '{stop.request}': {candidates}")
+      candidates = []
+    projected = project_pois_to_route(shape, candidates)
+    stop_eligible = filter_pois_by_position(projected, stop.position, POI_CORRIDOR_KM, stop.max_detour_km)
+    # A stop anywhere along the route beats no stop when the position is too strict
+    if not stop_eligible:
+      stop_eligible = filter_pois_by_position(projected, StopPositionEnum.Any, POI_CORRIDOR_KM, stop.max_detour_km)
+    eligible.append(stop_eligible)
+
+  # Without the LLM's ranking the places closest to the route are the safest pick
+  ranked = [sorted(candidates, key=lambda poi: poi.distance_to_route_km) for candidates in eligible]
+  if any(eligible):
+    try:
+      picks = await pick_pois(instructions, stops, eligible)
+      ranked = [[] for _ in stops]
+      for pick in picks:
+        if not 0 <= pick.stop_index < len(stops): continue
+        candidates = eligible[pick.stop_index]
+        ranked[pick.stop_index] = [candidates[id] for id in pick.candidate_ids if 0 <= id < len(candidates)]
+    except Exception as e:
+      logger.warning(f"POI ranking failed, using the places closest to the route: {e}")
 
   selected: list[Place] = []
   for index, stop in enumerate(stops):
-    projected = project_pois_to_route(shape, candidates[index])
-    eligible = filter_pois_by_position(projected, stop.position, POI_CORRIDOR_KM, stop.max_detour_km)
-    # A stop anywhere along the route beats no stop when the position is too strict
-    if not eligible:
-      eligible = filter_pois_by_position(projected, StopPositionEnum.Any, POI_CORRIDOR_KM, stop.max_detour_km)
-
     picked: list[Place] = []
-    for poi in eligible:
+    for poi in ranked[index]:
       if len(picked) == (stop.count or 1): break
       too_close = any(
         p.name == poi.name or haversine_km((p.lat, p.lon), (poi.lat, poi.lon)) < MIN_POI_SPACING_KM

@@ -27,7 +27,3 @@ class NoRouteFoundException(HTTPException):
 class EmptyGeocodeResultException(HTTPException):
   def __init__(self, place: str) -> None:
     super().__init__(status.HTTP_404_NOT_FOUND, f"No coordinates found for '{place}'")
-
-class EmptyReverseGeocodeResultException(HTTPException):
-  def __init__(self, lat: float, lon: float) -> None:
-    super().__init__(status.HTTP_404_NOT_FOUND, f"No place found near lon:{lon}, lat:{lat}")
