@@ -35,6 +35,9 @@ class RouteResult(BaseModel):
 # Valhalla is local and timeouts are set per request, one client reuses its connections
 client = httpx2.AsyncClient()
 
+# Service roads like courtyards can be dead ends for /round_trip
+SEARCH_FILTER = {"min_road_class": "residential"}
+
 curvature_to_scalar = {
   "low": 0.0,
   "medium": 0.5,
@@ -70,7 +73,8 @@ async def route(
     typed_locations.append({
         "type": "break" if stop else "through",
         "lon": location.lon,
-        "lat": location.lat
+        "lat": location.lat,
+        "search_filter": SEARCH_FILTER
     })
 
   params = {
@@ -98,7 +102,7 @@ async def round_trip(
     seed = random.randrange(0x100000000)
 
   params = {
-    "locations": [{"lat": p.lat, "lon": p.lon} for p in locations],
+    "locations": [{"lat": p.lat, "lon": p.lon, "search_filter": SEARCH_FILTER} for p in locations],
     "costing": "motorcycle",
     "costing_options": {
       "motorcycle": costing_options(opts)

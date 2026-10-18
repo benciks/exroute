@@ -5,6 +5,7 @@ import httpx2
 
 from app.api.v1.routes.schemas import PoiCategoryEnum
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.utils.poi import PoiCandidate
 
 # Geoapify bills one credit per 20 returned places, so a segment costs exactly one credit
@@ -23,7 +24,10 @@ class PlaceFeature(BaseModel):
 class PlaceResult(BaseModel):
   features: list[PlaceFeature]
 
-client = httpx2.AsyncClient()
+logger = get_logger(__name__)
+
+# Requests take 0.4-8 s, slower segments are dropped
+client = httpx2.AsyncClient(timeout=10.0)
 
 async def search_segment(
   categories: list[PoiCategoryEnum],
@@ -69,11 +73,21 @@ async def search_along_route(
   if not categories:
     return []
 
-  results = await asyncio.gather(*(search_segment(categories, segment, buffer_km) for segment in segments))
+  results = await asyncio.gather(
+    *(search_segment(categories, segment, buffer_km) for segment in segments),
+    return_exceptions=True
+  )
+  # Fail only when every segment did
+  failed = [result for result in results if isinstance(result, BaseException)]
+  if len(failed) == len(results):
+    raise failed[0]
+  if failed:
+    logger.warning(f"{len(failed)} of {len(results)} POI segments failed: {failed[0]!r}")
 
   # Neighbouring segments overlap within the buffer, so a place can come back twice
   unique: dict[str, PoiCandidate] = {}
   for candidates in results:
+    if isinstance(candidates, BaseException): continue
     for candidate in candidates:
       unique.setdefault(candidate.id, candidate)
   return list(unique.values())

@@ -28,7 +28,6 @@ async def geocode(
     lon: float | None = None,
     lat: float | None = None
   ) -> Place:
-  url = settings.GEOAPIFY_URL + '/v1/geocode/search'
   params = {
     "text": place,
     "format": "json",
@@ -39,16 +38,18 @@ async def geocode(
   if lon is not None and lat is not None:
     params["bias"] = f"proximity:{lon},{lat}"
 
-  response = await client.get(url, params=params)
-  response.raise_for_status()
+  # Search finds nothing for e.g. "Prague", autocomplete does
+  for endpoint in ('/v1/geocode/search', '/v1/geocode/autocomplete'):
+    response = await client.get(settings.GEOAPIFY_URL + endpoint, params=params)
+    response.raise_for_status()
 
-  result = GeocodeResult.model_validate(response.json())
-  if not result.results:
-    raise EmptyGeocodeResultException(place)
-  best_pick = result.results[0]
+    result = GeocodeResult.model_validate(response.json())
+    if result.results:
+      best_pick = result.results[0]
+      return Place(
+        lon = best_pick.lon,
+        lat = best_pick.lat,
+        name = best_pick.address_line1
+      )
 
-  return Place(
-    lon = best_pick.lon,
-    lat = best_pick.lat,
-    name = best_pick.address_line1
-  )
+  raise EmptyGeocodeResultException(place)
