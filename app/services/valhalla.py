@@ -37,8 +37,8 @@ client = httpx2.AsyncClient()
 
 curvature_to_scalar = {
   "low": 0.0,
-  "medium": 0.4,
-  "high": 0.8
+  "medium": 0.5,
+  "high": 1.0
 }
 
 def costing_options(opts: RouteOptions) -> dict[str, float]:
@@ -97,8 +97,6 @@ async def round_trip(
   if seed is None:
     seed = random.randrange(0x100000000)
 
-  # Valhalla sizes the search (candidates, overlap limits, reuse penalty) from the
-  # target itself, the seed only rotates where it places the loop's anchors
   params = {
     "locations": [{"lat": p.lat, "lon": p.lon} for p in locations],
     "costing": "motorcycle",
@@ -111,8 +109,6 @@ async def round_trip(
     "format": "json",
     "round_trip_options": {
       "seed": seed,
-      "prefer_under": target.mode == TargetModeEnum.Under,
-      "prefer_at_least": target.mode == TargetModeEnum.At_least
     }
   }
 

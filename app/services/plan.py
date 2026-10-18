@@ -4,7 +4,7 @@ import random
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from app.api.v1.routes.schemas import IntentTarget, RouteIntent, StopPositionEnum, StopSchema, TargetModeEnum, TargetValueEnum
+from app.api.v1.routes.schemas import IntentTarget, RouteIntent, StopPositionEnum, StopSchema, TargetValueEnum
 from app.core.exceptions import NoRouteFoundException
 from app.core.logging import get_logger
 from app.services.geocode import Coordinates, Place, geocode, reverse_geocode
@@ -25,7 +25,7 @@ MAX_ROUTE_SAMPLES = 12
 # Discovered stops closer than this read as one place on the map
 MIN_POI_SPACING_KM = 1
 # Loop size when the rider gave no distance or duration
-DEFAULT_LOOP_TARGET = IntentTarget(value=150, unit=TargetValueEnum.Km, mode=TargetModeEnum.Open)
+DEFAULT_LOOP_TARGET = IntentTarget(value=150, unit=TargetValueEnum.Km)
 
 class PlanResult(BaseModel):
   distance_km: float

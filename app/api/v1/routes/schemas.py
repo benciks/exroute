@@ -21,16 +21,9 @@ class TargetValueEnum(str, Enum):
   Km = 'km'
   Min = 'min'
 
-class TargetModeEnum(str, Enum):
-  Around = 'around'
-  Under = 'under'
-  At_least = 'at_least'
-  Open = 'open'
-
 class IntentTarget(BaseModel):
   value: int
   unit: TargetValueEnum
-  mode: TargetModeEnum
 
 class StopResolutionEnum(str, Enum):
   ExactPlace = 'exact_place'

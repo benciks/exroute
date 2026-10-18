@@ -26,8 +26,8 @@ warnings.filterwarnings(
 )
 
 # Caps runaway generation, structured output can otherwise loop until the model limit
-MAX_OUTPUT_TOKENS = 2048
-REASONING_EFFORT: ReasoningEffort = "none"
+MAX_OUTPUT_TOKENS = 4096
+REASONING_EFFORT: ReasoningEffort = "low"
 
 # Chat completions instead of the responses API, the LiteLLM proxy turns responses
 # requests into an empty `tools` array which vLLM rejects for some models (e.g. GLM)
@@ -40,7 +40,7 @@ Route topology:
 - end: a named destination different from start. Keep it when the user also says "and back". Omit it entirely for loops (round trips from start with no destination).
 - return_to_start: true when the trip returns to start. "Brno to Prague and back" means end="Prague" and true. A "50 km loop from Brno" has no end and true. "Brno to Prague" is false.
 
-Target is {value, unit, mode}. Unit is "km" or "min". Mode is "around", "under", "at_least", or "open". Only include target when the user states a distance or duration; omit it otherwise.
+Target is {value, unit}. Unit is "km" or "min". Only include target when the user states a distance or duration; omit it otherwise.
 
 Stops:
 - stops includes exact places and generic discovery requests.
@@ -53,7 +53,7 @@ Stops:
 - include max_detour_km only when given or strongly implied.
 
 Examples:
-- "50 km loop from Brno" -> no end, target {50, km, around}, no stops.
+- "50 km loop from Brno" -> no end, target {50, km}, no stops.
 - "50 km loop from Brno via Pernstejn" -> exact required stop, leg whole_route.
 - "50 km loop from Brno with a nice castle" -> preferred discover stop, leg whole_route, position any.
 - "loop from Brno past a couple of cool castles" -> one preferred discovery stop with count=2, leg whole_route.
@@ -72,7 +72,8 @@ async def parse_intent(instructions: str) -> RouteIntent:
       ],
       response_format = RouteIntent,
       max_completion_tokens = MAX_OUTPUT_TOKENS,
-      reasoning_effort = REASONING_EFFORT
+      reasoning_effort = REASONING_EFFORT,
+      temperature=0.0
     )
   # Output that breaks the schema or never finishes, providers behind a proxy
   # don't always enforce the schema constraints
@@ -156,7 +157,8 @@ async def suggest_pois(
     ],
     response_format = PoiSuggestions,
     max_completion_tokens = MAX_OUTPUT_TOKENS,
-    reasoning_effort = REASONING_EFFORT
+    reasoning_effort = REASONING_EFFORT,
+    temperature=0.4
   )
 
   parsed = response.choices[0].message.parsed
