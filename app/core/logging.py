@@ -6,7 +6,7 @@ from app.core.config import settings
 
 # The geocoder keys travel in the query string, so any logged URL would expose them:
 # the HTTP client's request log and the messages of its errors
-SECRET_PARAMS = re.compile(r"\b(api_key|access_token)=[^&\s'\"]+")
+SECRET_PARAMS = re.compile(r"\b(apiKey)=[^&\s'\"]+")
 
 class RedactingFormatter(logging.Formatter):
   def format(self, record: logging.LogRecord) -> str:

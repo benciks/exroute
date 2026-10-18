@@ -17,8 +17,6 @@ class Settings(BaseSettings):
   LLM_API_KEY: str
   LLM_MODEL: str = "qwen3.8-flash-next"
 
-  GEOCODE_URL: str
-  GEOCODE_API_KEY: str
   GEOAPIFY_URL: str
   GEOAPIFY_API_KEY: str
 
