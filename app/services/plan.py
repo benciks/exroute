@@ -22,7 +22,7 @@ POI_CORRIDOR_KM = 10
 # Each segment is one Geoapify request per stop returning at most 20 places
 POI_SEGMENT_KM = 25
 # Caps requests per stop on long routes, the segments get longer instead
-MAX_POI_SEGMENTS = 8
+MAX_POI_SEGMENTS = 4
 # Discovered stops closer than this read as one place on the map
 MIN_POI_SPACING_KM = 1
 # Loop size when the rider gave no distance or duration
