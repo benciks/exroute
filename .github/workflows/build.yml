@@ -26,16 +26,14 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "Version: $VERSION"
 
-      - name: Build image
-        run: |
-          docker build -t ghcr.io/${{ env.CONTAINER_NAME }}:latest .
-          docker build -t ghcr.io/${{ env.CONTAINER_NAME }}:${{ env.VERSION }} .
-
       - name: Login to ghcr
         run: |
           echo $GHCR_TOKEN | docker login ghcr.io -u $GHCR_USER --password-stdin
 
-      - name: Push image to ghcr.io
+      - name: Build and push images
         run: |
-          docker push ghcr.io/${{ env.CONTAINER_NAME }}:latest
-          docker push ghcr.io/${{ env.CONTAINER_NAME }}:${{ env.VERSION }}
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -t ghcr.io/${{ env.CONTAINER_NAME }}:latest \
+            -t ghcr.io/${{ env.CONTAINER_NAME }}:${{ env.VERSION }} \
+            --push .
