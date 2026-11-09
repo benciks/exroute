@@ -64,7 +64,7 @@ Examples:
 - "Brno to Prague via Mikulov" -> end=Prague, exact required stop, leg outbound.
 - "Brno to Prague and back, coffee on the way back" -> end=Prague, preferred discovery stop, leg return, position middle.
 
-Curvature is "high" for explicitly curvy/twisty roads and "medium" for explicitly scenic/winding roads. Omit curvature when the rider did not request road curvature; use "low" only when they explicitly request low curvature. It is a Valhalla cost preference; never create synthetic curvature stops. Reflect explicit motorway and toll preferences. Keep notes concise.'''
+Curvature is "high" for explicitly curvy/twisty roads, "medium" for explicitly scenic/winding roads and "low" for a mild preference ("a few curves", "slightly winding"). Omit curvature when the rider did not request road curvature or wants straight, fast roads. It is a Valhalla cost preference; never create synthetic curvature stops. Reflect explicit motorway and toll preferences. Keep notes concise.'''
 
 async def parse_intent(instructions: str) -> RouteIntent:
   try:

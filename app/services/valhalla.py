@@ -39,7 +39,7 @@ client = httpx2.AsyncClient()
 SEARCH_FILTER = {"min_road_class": "residential"}
 
 curvature_to_scalar = {
-  "low": 0.0,
+  "low": 0.25,
   "medium": 0.5,
   "high": 1.0
 }
