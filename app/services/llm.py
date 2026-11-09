@@ -43,6 +43,8 @@ Route topology:
 
 Target is {value, unit}. Unit is "km" or "min". Only include target when the user states a distance or duration; omit it otherwise.
 
+Heading is the compass direction a loop should head out in: "north", "northeast", "east", "southeast", "south", "southwest", "west" or "northwest". "A loop heading north from Brno" or "ride east from Brno and back" -> "north" / "east". Only for loops without an end; omit it when the user names a destination or gives no direction.
+
 Stops:
 - stops includes exact places and generic discovery requests.
 - request preserves the natural-language request for discovery stops. For exact places it is only the place name as it would be searched on a map, without words like "via" or "through": "via Mikulov" -> "Mikulov".
@@ -99,6 +101,9 @@ async def parse_intent(instructions: str) -> RouteIntent:
     intent.return_to_start = True
   if any(stop.leg == StopLegEnum.Return for stop in intent.stops):
     intent.return_to_start = True
+  # Only generated loops have a direction to choose, a destination already sets it
+  if intent.end:
+    intent.heading = None
 
   return intent
 

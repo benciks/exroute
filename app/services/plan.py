@@ -4,7 +4,7 @@ import random
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from app.api.v1.routes.schemas import IntentTarget, RouteIntent, StopPositionEnum, StopSchema, TargetValueEnum
+from app.api.v1.routes.schemas import HeadingEnum, IntentTarget, RouteIntent, StopPositionEnum, StopSchema, TargetValueEnum
 from app.core.exceptions import NoRouteFoundException
 from app.core.logging import get_logger
 from app.services.geocode import Coordinates, Place, geocode
@@ -27,6 +27,17 @@ MAX_POI_SEGMENTS = 4
 MIN_POI_SPACING_KM = 1
 # Loop size when the rider gave no distance or duration
 DEFAULT_LOOP_TARGET = IntentTarget(value=150, unit=TargetValueEnum.Km)
+HEADING_BEARINGS = {
+  HeadingEnum.North: 0,
+  HeadingEnum.NorthEast: 45,
+  HeadingEnum.East: 90,
+  HeadingEnum.SouthEast: 135,
+  HeadingEnum.South: 180,
+  HeadingEnum.SouthWest: 225,
+  HeadingEnum.West: 270,
+  HeadingEnum.NorthWest: 315,
+}
+HEADING_JITTER_DEG = 20
 
 class PlanResult(BaseModel):
   distance_km: float
@@ -149,7 +160,7 @@ async def plan_generated_loop(instructions: str, intent: RouteIntent) -> PlanRes
   opts = route_options(intent)
   target = intent.target or DEFAULT_LOOP_TARGET
   # Reused for the refined call so Valhalla explores the same loop candidates
-  seed = random.randrange(0x100000000)
+  seed = loop_seed(intent.heading)
   # Valhalla generates the loop's anchors itself, only the rider's own stops are sent
   points = [start, *exact]
   routed = await round_trip(points, target, opts, seed)
@@ -173,6 +184,14 @@ async def plan_generated_loop(instructions: str, intent: RouteIntent) -> PlanRes
     polyline=encode_shape(join_legs(routed.leg_shapes)),
     waypoints=points,
   )
+
+def loop_seed(heading: HeadingEnum | None) -> int:
+  if heading is None:
+    return random.randrange(0x100000000)
+  # Valhalla points the first anchor of a loop without vias at seed % 360 degrees. The jitter
+  # varies the loop between requests while staying within the heading's 45 degree sector
+  bearing = (HEADING_BEARINGS[heading] + random.randint(-HEADING_JITTER_DEG, HEADING_JITTER_DEG)) % 360
+  return random.randrange(0x100000000 // 360) * 360 + bearing
 
 def route_options(intent: RouteIntent) -> RouteOptions:
   return RouteOptions(

@@ -49,6 +49,16 @@ class CurvatureEnum(str, Enum):
   Medium = 'medium'
   High = 'high'
 
+class HeadingEnum(str, Enum):
+  North = 'north'
+  NorthEast = 'northeast'
+  East = 'east'
+  SouthEast = 'southeast'
+  South = 'south'
+  SouthWest = 'southwest'
+  West = 'west'
+  NorthWest = 'northwest'
+
 # Geoapify place categories a discovery stop can search, kept to what riders stop for.
 # Geoapify rejects the whole request on an unknown category, so the LLM can't make one up
 class PoiCategoryEnum(str, Enum):
@@ -94,6 +104,7 @@ class RouteIntent(BaseModel):
   end: str | None = None
   return_to_start: bool
   target: IntentTarget | None = None
+  heading: HeadingEnum | None = None
   stops: list[StopSchema] = []
   curvature: CurvatureEnum | None = None
   avoid_motorways: bool = False
