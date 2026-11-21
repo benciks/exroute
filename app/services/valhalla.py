@@ -44,7 +44,7 @@ curvature_to_scalar = {
   "high": 1.0
 }
 
-def costing_options(opts: RouteOptions) -> dict[str, float]:
+def costing_options(opts: RouteOptions, exclude_tolls: bool = True) -> dict[str, float | bool]:
   costing_options = {}
   if opts.curvature:
     costing_options["use_curvature"] = curvature_to_scalar[opts.curvature] 
@@ -54,7 +54,11 @@ def costing_options(opts: RouteOptions) -> dict[str, float]:
     costing_options["use_highways"] = 0.0
 
   if opts.avoid_tolls:
-    costing_options["use_tolls"] = 0.0 
+    # use_tolls alone is only a cost, Czech motorways still win on long trips. Excluding
+    # tolls forbids them, except where the trip starts or ends on one
+    costing_options["use_tolls"] = 0.0
+    if exclude_tolls:
+      costing_options["exclude_tolls"] = True
 
   return costing_options
 
@@ -88,7 +92,7 @@ async def route(
     },
     "format": "json"
   }
-  return await post_trip("/route", params, timeout=30.0)
+  return await post_with_toll_fallback("/route", params, opts, timeout=30.0)
 
 async def round_trip(
     locations: Sequence[Coordinates],
@@ -121,7 +125,16 @@ async def round_trip(
   else:
     params["target_time"] = target.value
 
-  return await post_trip("/round_trip", params, timeout=120.0)
+  return await post_with_toll_fallback("/round_trip", params, opts, timeout=120.0)
+
+async def post_with_toll_fallback(path: str, params: dict, opts: RouteOptions, timeout: float) -> RouteResult:
+  """Posts the trip, and when no toll-free route exists, settles for one with few tolls."""
+  try:
+    return await post_trip(path, params, timeout)
+  except NoRouteFoundException:
+    if not opts.avoid_tolls: raise
+    params["costing_options"]["motorcycle"] = costing_options(opts, exclude_tolls=False)
+    return await post_trip(path, params, timeout)
 
 async def post_trip(path: str, params: dict, timeout: float) -> RouteResult:
   response = await client.post(settings.VALHALLA_URL + path, json=params, timeout=timeout)
