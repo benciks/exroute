@@ -1,13 +1,14 @@
 import asyncio
 import random
+from collections.abc import Sequence
 
 from fastapi import HTTPException
 from pydantic import BaseModel
 
 from app.api.v1.routes.schemas import HeadingEnum, IntentTarget, RouteIntent, StopPositionEnum, StopSchema, TargetValueEnum
-from app.core.exceptions import NoRouteFoundException
+from app.core.exceptions import NoRouteFoundException, UnclearRequestException
 from app.core.logging import get_logger
-from app.services.geocode import Coordinates, Place, geocode
+from app.services.geocode import Coordinates, Place, SearchArea, distance_km, geocode
 from app.services.llm import pick_pois
 from app.services.places import search_along_route
 from app.services.valhalla import RouteOptions, round_trip, route
@@ -38,6 +39,13 @@ HEADING_BEARINGS = {
   HeadingEnum.NorthWest: 315,
 }
 HEADING_JITTER_DEG = 20
+# A named stop may make the trip at most this many times longer than riding straight
+# there, in straight-line distance. Rules out namesakes far away from the trip
+STOP_DETOUR_FACTOR = 2.0
+# ...plus this much, so stops just off a short trip are still accepted
+STOP_SLACK_KM = 20
+# Rough reach of a loop per minute of a duration target
+LOOP_KM_PER_MIN = 1.0
 
 class PlanResult(BaseModel):
   distance_km: float
@@ -47,19 +55,17 @@ class PlanResult(BaseModel):
 
 async def plan_a_to_b(instructions: str, intent: RouteIntent) -> PlanResult:
   if intent.end is None:
-    raise NoRouteFoundException("A one-way route needs an end destination")
+    # Without a destination or a loop there is nothing to plan, e.g. "Tell me a joke"
+    raise UnclearRequestException("Where should the route go? Name a destination, or ask for a loop")
 
   start = await geocode(intent.start)
+  end = await geocode(intent.end, start.lon, start.lat)
 
-  # End and exact stops are all focused around the start, so they can run at once
   exact_stops = [
     stop for stop in intent.stops
     if stop.resolution == "exact_place" and stop.leg != "return"
   ]
-  end, exact = await asyncio.gather(
-    geocode(intent.end, start.lon, start.lat),
-    geocode_stops(exact_stops, start),
-  )
+  exact = await geocode_stops(exact_stops, start, on_the_way(start, end), [start, end])
 
   opts = route_options(intent)
   points = [start, *exact, end]
@@ -105,12 +111,12 @@ async def plan_destination_return(instructions: str, intent: RouteIntent) -> Pla
     stop for stop in intent.stops
     if stop.resolution == "exact_place" and stop.leg == "return"
   ]
-  end, outbound = await asyncio.gather(
-    geocode(intent.end, start.lon, start.lat),
-    geocode_stops(outbound_stops, start),
-  )
+  end = await geocode(intent.end, start.lon, start.lat)
   # Stops on the way back are looked up around the destination
-  back = await geocode_stops(return_stops, end)
+  outbound, back = await asyncio.gather(
+    geocode_stops(outbound_stops, start, on_the_way(start, end), [start, end]),
+    geocode_stops(return_stops, end, on_the_way(start, end), [start, end]),
+  )
 
   opts = route_options(intent)
   points = [start, *outbound, end, *back, start]
@@ -152,13 +158,15 @@ async def plan_destination_return(instructions: str, intent: RouteIntent) -> Pla
 
 async def plan_generated_loop(instructions: str, intent: RouteIntent) -> PlanResult:
   start = await geocode(intent.start)
+  target = intent.target or DEFAULT_LOOP_TARGET
   exact = await geocode_stops(
     [stop for stop in intent.stops if stop.resolution == "exact_place"],
     start,
+    within_loop(start, target),
+    [start],
   )
 
   opts = route_options(intent)
-  target = intent.target or DEFAULT_LOOP_TARGET
   # Reused for the refined call so Valhalla explores the same loop candidates
   seed = loop_seed(intent.heading)
   # Valhalla generates the loop's anchors itself, only the rider's own stops are sent
@@ -200,9 +208,28 @@ def route_options(intent: RouteIntent) -> RouteOptions:
     avoid_tolls=intent.avoid_tolls,
   )
 
-async def geocode_stops(stops: list[StopSchema], near: Coordinates) -> list[Place]:
+def on_the_way(a: Coordinates, b: Coordinates) -> SearchArea:
+  """Where a trip from a to b can pass a stop without a huge detour.
+
+  The places whose detour stays within the limit form an ellipse around a and b, the
+  circle around its center with half the limit as radius contains all of it.
+  """
+  limit = STOP_DETOUR_FACTOR * distance_km(a, b) + STOP_SLACK_KM
+  return SearchArea(lon=(a.lon + b.lon) / 2, lat=(a.lat + b.lat) / 2, radius_km=limit / 2)
+
+def within_loop(start: Coordinates, target: IntentTarget) -> SearchArea:
+  """Where a loop of the target size can reach, at most half its length from the start."""
+  length = target.value if target.unit == TargetValueEnum.Km else target.value * LOOP_KM_PER_MIN
+  return SearchArea(lon=start.lon, lat=start.lat, radius_km=length / 2 + STOP_SLACK_KM)
+
+async def geocode_stops(
+  stops: list[StopSchema],
+  near: Coordinates,
+  area: SearchArea | None = None,
+  away_from: Sequence[Coordinates] = (),
+) -> list[Place]:
   results = await asyncio.gather(
-    *(geocode(stop.request, near.lon, near.lat) for stop in stops),
+    *(geocode(stop.request, near.lon, near.lat, area, away_from) for stop in stops),
     return_exceptions=True
   )
 
